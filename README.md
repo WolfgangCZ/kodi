@@ -1,2 +1,2 @@
 # kodi
-Repository with my kodi plugins
+Nic to neni, rozejdete se

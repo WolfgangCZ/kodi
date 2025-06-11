@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addons>
+    <addon id="plugin.video.wolfgang_fun_pack" name="Wolfgang Fun Pack" version="0.0.1" provider-name="Wolfgang">
+        <requires>
+            <import addon="xbmc.python" version="3.0.0" />
+        </requires>
+        <extension point="xbmc.python.pluginsource" library="default.py">
+            <provides>video</provides>
+        </extension>
+        <extension point="xbmc.addon.metadata">
+            <summary lang="cs_CZ">Something</summary>
+            <description lang="cs_CZ">Somwthing</description>
+            <language>cs_CZ</language>
+            <platform>all</platform>
+            <assets>
+                <icon>resources/media/icon.png</icon>
+                <fanart>resources/media/fanart.jpg</fanart>
+            </assets>
+        </extension>
+    </addon>
+</addons>
