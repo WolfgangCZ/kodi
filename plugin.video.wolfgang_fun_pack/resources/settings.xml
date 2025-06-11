@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+    <category label="Login">
+        <setting id="plugin_token" type="text" label="Username" default=""/>
+        <setting id="username" type="text" label="Username" default=""/>
+        <setting id="password" type="text" label="Password" option="hidden" default=""/>
+    </category>
+    <category label="System">
+        <setting id="first_run" type="bool" label="First Run" default="false"/>
+    </category>
+    <category label="Data">
+        <setting id="last_searched" type="text" label="Last search" option="hidder" default=""/>
+    </category>
+</settings>
