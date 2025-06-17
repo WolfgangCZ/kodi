@@ -6,9 +6,9 @@
         <setting id="password" type="text" label="Password" option="hidden" default=""/>
     </category>
     <category label="System">
-        <setting id="first_run" type="bool" label="First Run" default="false"/>
+        <setting id="first_run" type="bool" label="First Run" default="true"/>
     </category>
     <category label="Data">
-        <setting id="last_searched" type="text" label="Last search" option="hidder" default=""/>
+        <setting id="last_searched" type="text" label="Last search" option="hidden" default=""/>
     </category>
 </settings>
