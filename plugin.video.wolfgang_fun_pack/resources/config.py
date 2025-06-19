@@ -4,7 +4,6 @@ import xbmcaddon
 ADDON = xbmcaddon.Addon()
 SETTINGS = xbmcaddon.Settings
 
-FIRST_RUN = False
 DEBUG = True
 
 BASE_URL = sys.argv[0]

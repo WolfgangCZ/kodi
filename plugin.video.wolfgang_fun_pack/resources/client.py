@@ -66,7 +66,7 @@ class WebshareClient:
         response.raise_for_status()
         return xmltodict.parse(response.text), response
     
-    def search(self, query: str, sort: str = "recent", offset: int = 0, category: str = "video", limit: int = 20) -> Tuple[dict, requests.Response]:
+    def search(self, query: str, sort: str = "relevancy", offset: int = 0, category: str = "video", limit: int = 1000) -> Tuple[dict, requests.Response]:
         data = {
             "what": query,
             "sort": sort,

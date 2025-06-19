@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import xbmc
 
 # Set log file path
 this_dir = os.path.dirname(os.path.abspath(__file__))
@@ -47,6 +48,12 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
+
+class KodiLoggger:
+    intro = "Wolfang_fun_pack: "
+    @classmethod
+    def info(cls, message: str) -> None:
+        xbmc.log(f"{cls.intro}{message}", level=xbmc.LOGINFO)
 
 
 # Test output

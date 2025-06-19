@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 from typing import Tuple, List, Dict
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "packages"))
@@ -7,7 +8,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "packages"))
 import xbmc
 from dataclasses import dataclass
 from resources.constants import UrlItems, UrlKeys
-from resources.settings import SettingKeyStr, SettingsKeyBool
 from resources import config
 import xbmcplugin # type: ignore
 import xbmcaddon # type: ignore
@@ -16,8 +16,9 @@ from urllib.parse import urlparse, parse_qs
 from resources.client import WebshareClient
 from resources.encrypt import encrypt_password
 from resources.strings import InputStrings, PopUpStrings
-from resources.logger import logger
+from resources.logger import logger, KodiLoggger
 from resources.enums import ConnectionStatus
+from resources.settings import Settings, SettingKeys
 
 @dataclass
 class UrlParams:
@@ -59,19 +60,39 @@ class Plugin:
     def __init__(self):
         self.client = WebshareClient()
         self._auth_token: str = ""
- 
+
+    def run(self):
+        # because first time we get false then we set it to true
+        first_run: bool = Settings.get_bool(SettingKeys.FIRST_RUN)
+        logger.info("Is first run: %s", first_run)
+        if self.check_connection():
+            if first_run:
+                username, password = self.first_run()
+                self._login(username=username, password=password, first_time=True)
+        self.resolve_url(config.CURRENT_URL)
+
+    def first_run(self) -> Tuple[str, str]:
+        logger.info("First run")
+        xbmcgui.Dialog().ok('Nazdárek párek', InputStrings.WELCOME)
+        Settings.set_bool(SettingKeys.FIRST_RUN, False)
+
+        username = self.prompt_username(first_time=True)
+        password = self.prompt_password(first_time=True)
+
+        return username, password
+
     def get_auth_token(self) -> str:
         if self._auth_token:
             return self._auth_token
-        username = config.ADDON.getSetting(SettingKeyStr.USER_NAME)
-        hashed_password = config.ADDON.getSetting(SettingKeyStr.HASHED_PASSWORD)
-        if not username or not hashed_password:
+        username = Settings.get_str(SettingKeys.USER_NAME)
+        password = Settings.get_str(SettingKeys.PASSWORD)
+        hashed_password = Settings.get_str(SettingKeys.HASHED_PASSWORD)
+        if not username or (not password and not hashed_password):
             logger.info("Missing username or password")
             xbmcgui.Dialog().ok('Wtf', PopUpStrings.INVALID_CREDENTIALS)
             username = self.prompt_username(first_time=False)
             password = self.prompt_password(first_time=False)
             if (hashed_password or password) and username:
-                logger.info("username: %s, password: %s, hashed_password: %s", username, password, hashed_password)
                 self._auth_token = self._login(username=username, password=password, hashed_password=hashed_password)
             else:
                 return ""
@@ -80,8 +101,9 @@ class Plugin:
             return self._auth_token
         if not self._auth_token:
             xbmcgui.Dialog().ok('Wtf', PopUpStrings.COULDNT_LOGIN)
-            config.ADDON.setSetting(SettingKeyStr.USER_NAME, "")
-            config.ADDON.setSetting(SettingKeyStr.HASHED_PASSWORD, "")
+            Settings.set_str(SettingKeys.USER_NAME, "")
+            Settings.set_str(SettingKeys.PASSWORD, "")
+            Settings.set_str(SettingKeys.HASHED_PASSWORD, "")
         return self._auth_token
     
     def get_file_link(self, identifier: str, auth_token: str) -> str:
@@ -129,17 +151,6 @@ class Plugin:
             xbmcgui.Dialog().ok('To jsou teda tajnosti...', PopUpStrings.PASSWORD_NOT_PROVIDED)
         return password
     
-    def first_run(self) -> Tuple[str, str]:
-        logger.info("First run")
-        xbmcgui.Dialog().ok('Nazdárek párek', InputStrings.WELCOME)
-        config.ADDON.setSettingBool("first_run", False)
-        config.FIRST_RUN = True
-
-        username = self.prompt_username(first_time=True)
-        password = self.prompt_password(first_time=True)
-
-        return username, password
-    
     def _login(self, username: str, password: str = "", hashed_password: str = "", first_time: bool = False) -> str:
         """
         This also save credentials to settings
@@ -150,12 +161,12 @@ class Plugin:
             if not salt:
                 return ""
             hashed_password = encrypt_password(password, salt)
-        logger.info("login: %s, password: %s, hashed_password: %s", username, password, hashed_password)
         login_data, _ = self.client.login(username, hashed_password)
-        logger.info("login_data: %s", login_data)
         if login_data.get("response", {}).get("status") == "OK":
-            config.ADDON.setSetting(SettingKeyStr.USER_NAME, username)
-            config.ADDON.setSetting(SettingKeyStr.HASHED_PASSWORD, hashed_password)
+            Settings.set_str(SettingKeys.USER_NAME, username)
+            Settings.set_str(SettingKeys.HASHED_PASSWORD, hashed_password)
+            if password:
+                Settings.set_str(SettingKeys.PASSWORD, password)
             if first_time:
                 xbmcgui.Dialog().ok('', PopUpStrings.JOKE_1)
                 xbmcgui.Dialog().ok('', PopUpStrings.JOKE_2)
@@ -173,15 +184,6 @@ class Plugin:
         if status == ConnectionStatus.NO_WEBSHARE:
             xbmcgui.Dialog().ok('A kurva', PopUpStrings.NO_WEBSHARE)
         return False
-    
-    def run(self):
-        first_run: bool = config.ADDON.getSettingBool("first_run")
-        logger.info("First run: %s", first_run)
-        if self.check_connection():
-            if first_run:
-                username, password = self.first_run()
-                self._login(usoername=username, password=password, first_time=True)
-        self.resolve_url(config.CURRENT_URL)
     
     def url_check(self, params: List[UrlParams], checks: List[Tuple[str, str]]) -> bool:
         if len(params) < len(checks):
@@ -234,7 +236,7 @@ class Plugin:
         xbmcplugin.addDirectoryItem(
             handle=config.HANDLE, url=url, listitem=li, isFolder=True
         )
-        if config.ADDON.getSetting(SettingKeyStr.LAST_SEARCH):
+        if self.get_last_searched():
             url = self.construct_url([UrlParams(key=UrlKeys.ACTION, name=UrlItems.LAST_SEARCH)])
             li = xbmcgui.ListItem(label="Poslední hledání")
             xbmcplugin.addDirectoryItem(
@@ -243,12 +245,12 @@ class Plugin:
         xbmcplugin.endOfDirectory(handle=config.HANDLE)
     
     def get_last_searched(self) -> str:
-        return config.ADDON.getSetting(SettingKeyStr.LAST_SEARCH)
+        return Settings.get_str(SettingKeys.LAST_SEARCH)
     
     def set_last_search(self, query: str):
-        config.ADDON.setSetting(SettingKeyStr.LAST_SEARCH, query)
+        Settings.set_str(SettingKeys.LAST_SEARCH, query)
     
-    def search_for_videos(self, query: str, limit: int = 20) -> List[SearchResult]:
+    def search_for_videos(self, query: str, limit: int = 1000) -> List[SearchResult]:
         search_data, _ =  self.client.search(query=query, limit=limit)
         if search_data.get("response", {}).get("status") != "OK" or not search_data.get("response", {}).get("file"):
             return []
@@ -281,13 +283,32 @@ class Plugin:
         for param in params:
             url += f"{param.key}={param.name}&"
         return url[:-1]
-    
+
+    def tokenize(self, text: str):
+        # Lowercase and split on common separators
+        return re.split(r'[\s._\-()\[\]]+', text.lower())
+
+    def custom_sort(self, query: str, results: List[SearchResult]) -> List[SearchResult]:
+        query_words = set(self.tokenize(query))
+        ranked_results: Dict[int, List[SearchResult]] = {}
+        for result in results:
+            tokenized_result = set(self.tokenize(result.file_name))
+            score = len(query_words.intersection(tokenized_result))
+            ranked_results.setdefault(score, []).append(result)
+        sorted_results: List[SearchResult] = []
+        for score, results in ranked_results.items():
+            ranked_results[score] = list(sorted(results, key=lambda x: x.file_name))
+        scores = sorted(ranked_results.keys(), reverse=True)
+        for score in scores:
+            sorted_results.extend(ranked_results[score])
+        return sorted_results
+
     def show_search_results(self, query: str):
-        videos = self.search_for_videos(query, limit=100)
+        videos = self.search_for_videos(query)
         if not videos:
             xbmcgui.Dialog().ok("Nenalezeno", "Fakt.. přísahám, díval jsem se i pod polštář")
             return
-        videos.sort(key=lambda x: x.file_name)
+        # sorted_videos = self.custom_sort(query, videos)
         for video in videos:
             li = xbmcgui.ListItem(label=video.file_name)
             params = [
