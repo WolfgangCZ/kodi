@@ -20,3 +20,4 @@ class UrlItems:
 class UrlKeys:
     ACTION = "action"
     IDENTIFIER = "ident"
+    FILE_NAME = "video_name"

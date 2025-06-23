@@ -1,6 +1,7 @@
 import os
 import sys
 import re
+import time
 from typing import Tuple, List, Dict
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "packages"))
@@ -186,6 +187,7 @@ class Plugin:
         return False
     
     def url_check(self, params: List[UrlParams], checks: List[Tuple[str, str]]) -> bool:
+        # TODO: this feels dumb
         if len(params) < len(checks):
             return False
         if not params:
@@ -195,12 +197,28 @@ class Plugin:
                 return False
         return True
     
+    def find_subtitles(self, video_name: str) -> str:
+        video_name = os.path.splitext(video_name)[0]
+        subtitles_data, _ = self.client.search(video_name + ".srt", category="")
+        if subtitles_data.get("response", {}).get("status") != "OK":
+            return ""
+        files = subtitles_data["response"]["file"]
+        for file in files:
+            if file["password"] == 1:
+                continue
+            if file["name"] == video_name + ".srt":
+                return file["ident"]
+        return ""
+    
     def resolve_url(self, current_url: str) -> str:
         logger.info("Resolving URL: %s", current_url)
         params = self.get_url_params(current_url)
         logger.info("Input url params: %s", params)
         if self.url_check(params, UrlPaths.MAIN_SEARCH):
             query = xbmcgui.Dialog().input("Hledat:")
+            if not query:
+                self.show_main_menu()
+                return
             logger.info("Showing results for: %s", query)
             self.show_search_results(query)
             self.set_last_search(query)
@@ -210,25 +228,29 @@ class Plugin:
             # TODO: do list of last searches as Seznam poslednich hledani
             self.show_search_results(query)
         elif self.url_check(params, UrlPaths.PLAY_VIDEO):
-            identifier = params[1].name
-            logger.info("Playing video: %s", identifier)
-            self.play_video(identifier)
+            video_identifier = params[1].name
+            subtitle_identifier = self.find_subtitles(params[2].name)
+            logger.info("Playing video: %s", video_identifier)
+            self.play_video(video_identifier, subtitle_identifier)
         else:
             logger.info("Showing main menu")
             self.show_main_menu()
-
-    def play_video(self, identifier: str) -> None:
+        
+    def play_video(self, video_identifier: str, subtitle_identifier: str) -> None:
         token = self.get_auth_token()
         logger.info("token: %s", token)
         if not token:
             return
-        link = self.get_file_link(identifier, token)
-        logger.info("Playing video, link: %s", link)
-        # li = xbmcgui.ListItem(path=link)
-        # li.setProperty("IsPlayable", "true")
-        # xbmcplugin.setResolvedUrl(handle=config.HANDLE, succeeded=True, listitem=li)
-        xbmc.Player().play(link)
-        logger.info("Resolved url")
+        video_link = self.get_file_link(video_identifier, token)
+        subtitle_link = self.get_file_link(subtitle_identifier, token)
+        logger.info("Playing video, link: %s", video_link)
+        player = xbmc.Player()
+        player.play(video_link)
+        while not player.isPlaying():
+            xbmc.sleep(500)
+        if subtitle_link:
+            logger.info("Playing subtitles, link: %s", subtitle_link)
+            player.setSubtitles(subtitle_link)
 
     def show_main_menu(self):
         url = self.construct_url([UrlParams(key=UrlKeys.ACTION, name=UrlItems.SEARCH_GLOBAL)])
@@ -313,7 +335,8 @@ class Plugin:
             li = xbmcgui.ListItem(label=video.file_name)
             params = [
                 UrlParams(key=UrlKeys.ACTION, name=UrlItems.PLAY_VIDEO),
-                UrlParams(key=UrlKeys.IDENTIFIER, name=video.identifier)
+                UrlParams(key=UrlKeys.IDENTIFIER, name=video.identifier),
+                UrlParams(key=UrlKeys.FILE_NAME, name=video.file_name),
                 ]
             play_url = self.construct_url(params)
             xbmcplugin.addDirectoryItem(handle=config.HANDLE, url=play_url, listitem=li ,isFolder=False)
