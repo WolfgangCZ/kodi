@@ -20,6 +20,7 @@ from resources.strings import InputStrings, PopUpStrings
 from resources.logger import logger, KodiLoggger
 from resources.enums import ConnectionStatus
 from resources.settings import Settings, SettingKeys
+from resources.authentication import Authentication
 
 @dataclass
 class UrlParams:
@@ -66,125 +67,17 @@ class Plugin:
         # because first time we get false then we set it to true
         first_run: bool = Settings.get_bool(SettingKeys.FIRST_RUN)
         logger.info("Is first run: %s", first_run)
-        if self.check_connection():
+        if Authentication.check_connection():
             if first_run:
                 username, password = self.first_run()
-                self._login(username=username, password=password, first_time=True)
+                Authentication._login(username=username, password=password, first_time=True)
         self.resolve_url(config.CURRENT_URL)
 
-    def first_run(self) -> Tuple[str, str]:
-        logger.info("First run")
-        xbmcgui.Dialog().ok('Nazdárek párek', InputStrings.WELCOME)
-        Settings.set_bool(SettingKeys.FIRST_RUN, False)
-
-        username = self.prompt_username(first_time=True)
-        password = self.prompt_password(first_time=True)
-
-        return username, password
-
-    def get_auth_token(self) -> str:
-        if self._auth_token:
-            return self._auth_token
-        username = Settings.get_str(SettingKeys.USER_NAME)
-        password = Settings.get_str(SettingKeys.PASSWORD)
-        hashed_password = Settings.get_str(SettingKeys.HASHED_PASSWORD)
-        if not username or (not password and not hashed_password):
-            logger.info("Missing username or password")
-            xbmcgui.Dialog().ok('Wtf', PopUpStrings.INVALID_CREDENTIALS)
-            username = self.prompt_username(first_time=False)
-            password = self.prompt_password(first_time=False)
-            if (hashed_password or password) and username:
-                self._auth_token = self._login(username=username, password=password, hashed_password=hashed_password)
-            else:
-                return ""
-        else:
-            self._auth_token = self._login(username=username, hashed_password=hashed_password)
-            return self._auth_token
-        if not self._auth_token:
-            xbmcgui.Dialog().ok('Wtf', PopUpStrings.COULDNT_LOGIN)
-            Settings.set_str(SettingKeys.USER_NAME, "")
-            Settings.set_str(SettingKeys.PASSWORD, "")
-            Settings.set_str(SettingKeys.HASHED_PASSWORD, "")
-        return self._auth_token
-    
     def get_file_link(self, identifier: str, auth_token: str) -> str:
         file_data, _ = self.client.file_link(identifier, auth_token) 
         if file_data.get("response", {}).get("status") != "OK":
             return ""
         return file_data["response"]["link"]
-    
-    def get_salt(self, username: str) -> str:
-        salt_data, _ = self.client.salt(username)
-        status = salt_data['response']['status']
-        if status == "OK":
-            return salt_data["response"]["salt"]
-        message = salt_data['response']['message']
-        if message == "User not found":
-            xbmcgui.Dialog().ok('Wtf', PopUpStrings.USER_NOT_FOUND)
-        return ""
-    
-    def prompt_credentials(self, first_time: bool = False) -> Tuple[str, str]:
-        username = self.prompt_username(first_time)
-        if username:
-            password = self.prompt_password(first_time)
-        if not username or not password:
-            return "", ""
-        return username, password
-    
-    def prompt_username(self, first_time: bool = False) -> str:
-        if first_time:
-            xbmcgui.Dialog().ok('Uživatelské jméno', InputStrings.USERNAME_MISSING_FIRST_TIME)
-        username = xbmcgui.Dialog().input('Username')
-        if not username:
-            xbmcgui.Dialog().ok('Tak si ho nech pro sebe', PopUpStrings.USERNAME_NOT_PROVIDED)
-            return "", ""
-        return username
-    
-    def prompt_password(self, first_time: bool = False) -> str:
-        if first_time:
-            xbmcgui.Dialog().ok('Heslo', InputStrings.PASSWORD_MISSING_FIRST_TIME)
-        keyboard = xbmc.Keyboard("", "heslo", True)
-        keyboard.doModal()
-        password = ""
-        if keyboard.isConfirmed():
-            password = keyboard.getText().strip()
-        if not password:
-            xbmcgui.Dialog().ok('To jsou teda tajnosti...', PopUpStrings.PASSWORD_NOT_PROVIDED)
-        return password
-    
-    def _login(self, username: str, password: str = "", hashed_password: str = "", first_time: bool = False) -> str:
-        """
-        This also save credentials to settings
-        Returns: token
-        """
-        if not hashed_password:
-            salt = self.get_salt(username)
-            if not salt:
-                return ""
-            hashed_password = encrypt_password(password, salt)
-        login_data, _ = self.client.login(username, hashed_password)
-        if login_data.get("response", {}).get("status") == "OK":
-            Settings.set_str(SettingKeys.USER_NAME, username)
-            Settings.set_str(SettingKeys.HASHED_PASSWORD, hashed_password)
-            if password:
-                Settings.set_str(SettingKeys.PASSWORD, password)
-            if first_time:
-                xbmcgui.Dialog().ok('', PopUpStrings.JOKE_1)
-                xbmcgui.Dialog().ok('', PopUpStrings.JOKE_2)
-                xbmcgui.Dialog().ok('Připojeno', PopUpStrings.FIRST_SUCCESFUL_LOGIN)
-            return login_data["response"]["token"]
-        return ""
-    
-    
-    def check_connection(self) -> bool:
-        status = self.client.check_connection()
-        if status == ConnectionStatus.OK:
-            return True
-        if status == ConnectionStatus.NO_INTERNET:
-            xbmcgui.Dialog().ok('Seš připojenej?', PopUpStrings.NO_INTERNET)
-        if status == ConnectionStatus.NO_WEBSHARE:
-            xbmcgui.Dialog().ok('A kurva', PopUpStrings.NO_WEBSHARE)
-        return False
     
     def url_check(self, params: List[UrlParams], checks: List[Tuple[str, str]]) -> bool:
         # TODO: this feels dumb
@@ -215,7 +108,8 @@ class Plugin:
         params = self.get_url_params(current_url)
         logger.info("Input url params: %s", params)
         if self.url_check(params, UrlPaths.MAIN_SEARCH):
-            query = xbmcgui.Dialog().input("Hledat:")
+            defaultt = self.get_last_searched()
+            query = xbmcgui.Dialog().input("Hledat:", defaultt=defaultt)
             if not query:
                 self.show_main_menu()
                 return
@@ -237,7 +131,7 @@ class Plugin:
             self.show_main_menu()
         
     def play_video(self, video_identifier: str, subtitle_identifier: str) -> None:
-        token = self.get_auth_token()
+        token = Authentication.get_auth_token()
         logger.info("token: %s", token)
         if not token:
             return

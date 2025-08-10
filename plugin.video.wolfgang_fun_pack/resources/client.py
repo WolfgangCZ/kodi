@@ -8,19 +8,19 @@ from resources.enums import ConnectionStatus
 
 API_URL = "https://webshare.cz/api"
 
-
+# TODO: fix this
 class WebshareClient:
     """
     Client for https://webshare.cz/api
     """
-    def __init__(self) -> None:
-        self.session = requests.Session()
-        self._auth_token: str = ""
-    
+    def __init__(self, auth_token: str = ""):
+        self._auth_token = auth_token
+
     @property
     def auth_token(self) -> str:
         if not self._auth_token:
-            raise ValueError("Not logged in")
+            logger.error("Not logged in")
+            return ""
         return self._auth_token
     
     def _post(self, api_target: str, data: Optional[dict] = None):
@@ -29,11 +29,11 @@ class WebshareClient:
         if self._auth_token:
             data["wst"] = self._auth_token
         url = f"{API_URL}/{api_target}/"
-        return self.session.post(url, data=data)
+        return requests.post(url, data=data)
     
     def check_connection(self) -> ConnectionStatus:
         try:
-            response = self.session.get(f"{API_URL}/help/")
+            response = requests.get(f"{API_URL}/help/")
         except requests.exceptions.ConnectionError as e:
             logger.error("Connection error: %s", e)
             return ConnectionStatus.NO_INTERNET
@@ -47,7 +47,7 @@ class WebshareClient:
             "password": password,
             "keep_logged_in": 1,
         }
-        response = self.session.post(f"{API_URL}/login/", data=data)
+        response = self._post("login", data=data)
         response.raise_for_status()
         response_content = xmltodict.parse(response.text)
         self._auth_token = response_content.get("response", {}).get("token")

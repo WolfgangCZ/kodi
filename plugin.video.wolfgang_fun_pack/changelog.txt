@@ -1,3 +1,5 @@
+Version 1.0.2: Patch
+- improvement: Při novém hledání zůstane v zadávacím poli text z posledního hledaní
 Version 1.0.1: Release
 - improvement: pokud jsou titulky k dispozici, jsou nahrány do videa
 - bugfix: poslední hledání se nezobrazovalo při prvním spuštění
