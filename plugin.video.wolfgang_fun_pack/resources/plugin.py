@@ -69,7 +69,7 @@ class Plugin:
         logger.info("Is first run: %s", first_run)
         if Authentication.check_connection():
             if first_run:
-                username, password = self.first_run()
+                username, password = Authentication.first_run()
                 Authentication._login(username=username, password=password, first_time=True)
         self.resolve_url(config.CURRENT_URL)
 
@@ -134,7 +134,8 @@ class Plugin:
         token = Authentication.get_auth_token()
         logger.info("token: %s", token)
         if not token:
-            return
+            token = Authentication.get_auth_token()
+            
         video_link = self.get_file_link(video_identifier, token)
         subtitle_link = self.get_file_link(subtitle_identifier, token)
         logger.info("Playing video, link: %s", video_link)

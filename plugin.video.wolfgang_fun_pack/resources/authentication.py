@@ -39,7 +39,7 @@ class Authentication:
             else:
                 return ""
         else:
-            cls._auth_token = cls._login(username=username, hashed_password=hashed_password)
+            cls._auth_token = cls._login(username=username, password=password, hashed_password=hashed_password)
             return cls._auth_token
         if not cls._auth_token:
             xbmcgui.Dialog().ok('Wtf', PopUpStrings.COULDNT_LOGIN)

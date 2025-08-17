@@ -1,3 +1,5 @@
+Version 1.0.4: Patch
+- bugfix: Motherfucking bitch work!
 Version 1.0.3: Patch
 - bugfix: Prvni spusteni nefungovalo, oprava
 Version 1.0.2: Patch
