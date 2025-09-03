@@ -14,6 +14,7 @@ class SettingKeys:
     PASSWORD = SettingTag(name="password", type=str, public=True)
     HASHED_PASSWORD  = SettingTag(name="hashed_password", type=str, public=False)
     LAST_SEARCH = SettingTag(name="last_search", type=str, public=False)
+    LAST_SEARCHED_INPUTS = SettingTag(name="last_searched_items", type=str, public=False)
     FIRST_RUN = SettingTag(name="first_run", type=bool, public=False)
 
 class Settings:

@@ -13,7 +13,7 @@ from resources import config
 import xbmcplugin # type: ignore
 import xbmcaddon # type: ignore
 import xbmcgui # type: ignore
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 from resources.client import WebshareClient
 from resources.encrypt import encrypt_password
 from resources.strings import InputStrings, PopUpStrings
@@ -38,6 +38,12 @@ class UrlPaths:
     ]
     LAST_SEARCH = [
         (UrlKeys.ACTION, UrlItems.LAST_SEARCH)
+    ]
+    LAST_SEARCH_INPUTS = [
+        (UrlKeys.ACTION, UrlItems.LAST_SEARCH_INPUTS)
+    ]
+    PROMPT_LAST_SEARCH = [
+        (UrlKeys.ACTION, UrlItems.PROMPT_LAST_SEARCH)
     ]
 
 
@@ -108,14 +114,15 @@ class Plugin:
         params = self.get_url_params(current_url)
         logger.info("Input url params: %s", params)
         if self.url_check(params, UrlPaths.MAIN_SEARCH):
-            defaultt = self.get_last_searched()
-            query = xbmcgui.Dialog().input("Hledat:", defaultt=defaultt)
+            default = self.get_last_searched()
+            query = xbmcgui.Dialog().input("Hledat:", defaultt=default)
             if not query:
                 self.show_main_menu()
                 return
             logger.info("Showing results for: %s", query)
             self.show_search_results(query)
             self.set_last_search(query)
+            self.add_to_last_searched_inputs(query)
         elif self.url_check(params, UrlPaths.LAST_SEARCH):
             query = self.get_last_searched()
             logger.info("Showing last search for: %s", query)
@@ -126,9 +133,52 @@ class Plugin:
             subtitle_identifier = self.find_subtitles(params[2].name)
             logger.info("Playing video: %s", video_identifier)
             self.play_video(video_identifier, subtitle_identifier)
+        elif self.url_check(params, UrlPaths.PROMPT_LAST_SEARCH):
+            default_query = unquote(params[1].name)
+            logger.info("default query: %s", default_query)
+            query = xbmcgui.Dialog().input("Hledat:", defaultt=default_query)
+            if not query:
+                self.show_last_searched_inputs()
+                return
+            logger.info("Showing results for: %s", query)
+            self.show_search_results(query)
+            self.set_last_search(query)
+        elif self.url_check(params, UrlPaths.LAST_SEARCH_INPUTS):
+            logger.info("Showing last searched inputs")
+            self.show_last_searched_inputs()
         else:
             logger.info("Showing main menu")
             self.show_main_menu()
+    
+    def add_to_last_searched_inputs(self, query: str) -> None:
+        last_searched_inputs = self.get_last_searched_inputs()
+        if len(last_searched_inputs) > 99:
+            last_searched_inputs = last_searched_inputs[:99]
+        last_searched_str = query + "," + ",".join(last_searched_inputs)
+        Settings.set_str(SettingKeys.LAST_SEARCHED_INPUTS, last_searched_str)
+    
+    def get_last_searched_inputs(self) -> List[str]:
+        last_searched_inputs = Settings.get_str(SettingKeys.LAST_SEARCHED_INPUTS)       
+        if not last_searched_inputs:
+            return []
+        items = [item.strip() for item in last_searched_inputs.split(",")]
+        return items
+    
+    def show_last_searched_inputs(self):
+        items = self.get_last_searched_inputs()
+        logger.info("Last searched inputs: %s", items)
+        for item in items:
+            if item:
+                params = [
+                    UrlParams(key=UrlKeys.ACTION, name=UrlItems.PROMPT_LAST_SEARCH),
+                    UrlParams(key=UrlKeys.FILE_NAME, name=item),
+                    ]
+                li = xbmcgui.ListItem(label=item)
+                url = self.construct_url(params)
+                xbmcplugin.addDirectoryItem(
+                    handle=config.HANDLE, url=url, listitem=li, isFolder=True
+                )
+        xbmcplugin.endOfDirectory(handle=config.HANDLE)
         
     def play_video(self, video_identifier: str, subtitle_identifier: str) -> None:
         token = Authentication.get_auth_token()
@@ -148,24 +198,30 @@ class Plugin:
             player.setSubtitles(subtitle_link)
 
     def show_main_menu(self):
-        url = self.construct_url([UrlParams(key=UrlKeys.ACTION, name=UrlItems.SEARCH_GLOBAL)])
         li = xbmcgui.ListItem(label="Hledej")
+        url = self.construct_url([UrlParams(key=UrlKeys.ACTION, name=UrlItems.SEARCH_GLOBAL)])
         xbmcplugin.addDirectoryItem(
             handle=config.HANDLE, url=url, listitem=li, isFolder=True
         )
         if self.get_last_searched():
             url = self.construct_url([UrlParams(key=UrlKeys.ACTION, name=UrlItems.LAST_SEARCH)])
-            li = xbmcgui.ListItem(label="Poslední hledání")
+            li = xbmcgui.ListItem(label="Poslední vyhledávání")
             xbmcplugin.addDirectoryItem(
                 handle=config.HANDLE, url=url, listitem=li, isFolder=True
             )
+        li = xbmcgui.ListItem(label="Seznam posledních vyhledávání")
+        url = self.construct_url([UrlParams(key=UrlKeys.ACTION, name=UrlItems.LAST_SEARCH_INPUTS)])
+        xbmcplugin.addDirectoryItem(
+            handle=config.HANDLE, url=url, listitem=li, isFolder=True
+        )
         xbmcplugin.endOfDirectory(handle=config.HANDLE)
     
     def get_last_searched(self) -> str:
         return Settings.get_str(SettingKeys.LAST_SEARCH)
     
     def set_last_search(self, query: str):
-        Settings.set_str(SettingKeys.LAST_SEARCH, query)
+        if query:
+            Settings.set_str(SettingKeys.LAST_SEARCH, query)
     
     def search_for_videos(self, query: str, limit: int = 1000) -> List[SearchResult]:
         search_data, _ =  self.client.search(query=query, limit=limit)
